@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // ProgressReport represents the current download progress of a given file
 type ProgressReport struct {
+	sync.RWMutex
 	// Total length in bytes of the file being downloaded
 	Total int64
 	// Current progress in bytes
@@ -28,8 +28,6 @@ type Config struct {
 	URL string
 	// Destination directory where the file is going to be downloaded to
 	DestDir string
-	// Size limit in bytes upon which a parallel download will be used.
-	SizeLimit int64
 	// Concurrency level for parallel downloads
 	Concurrency int
 	// If not nil, downloading progress is going to be reported through
@@ -45,10 +43,6 @@ func setDefaults(config *Config) {
 
 	if config.DestDir == "" {
 		config.DestDir = "./"
-	}
-
-	if config.SizeLimit == 0 {
-		config.SizeLimit = 1048576 // 1MB
 	}
 }
 
@@ -72,33 +66,31 @@ func Fetch(config Config) error {
 	}
 
 	destFile := filepath.Join(config.DestDir, path.Base(config.URL))
-
-	if res.ContentLength > config.SizeLimit && res.Header.Get("Accept-Ranges") == "bytes" {
-		return parallelFetch(config, destFile, res.ContentLength)
-	}
-
-	report := ProgressReport{Total: res.ContentLength}
-	return fetch(config, destFile, int64(0), res.ContentLength, &report)
+	return parallelFetch(config, destFile, res.ContentLength)
 }
 
 // parallelFetch fetches using multiple goroutines, each piece is streamed down
 // to disk which makes it very efficient in terms of memory usage.
 func parallelFetch(config Config, destFile string, length int64) error {
-	fmt.Println("Going parallel...")
+	if config.Progress != nil {
+		defer close(config.Progress)
+	}
+
 	var wg sync.WaitGroup
 
 	report := ProgressReport{Total: length}
-	chunkSize := length / int64(config.Concurrency)
-	remainingSize := length % int64(config.Concurrency)
+	concurrency := int64(config.Concurrency)
+	chunkSize := length / concurrency
+	remainingSize := length % concurrency
 	chunksDir := filepath.Join(config.DestDir, path.Base(config.URL)+".chunks")
 	os.MkdirAll(chunksDir, 0760)
 
 	var errs []error
-	for i := 0; i < config.Concurrency; i++ {
-		min := chunkSize * int64(i)
-		max := chunkSize * int64(i+1)
+	for i := int64(0); i < concurrency; i++ {
+		min := chunkSize * i
+		max := chunkSize * (i + 1)
 
-		if i == config.Concurrency {
+		if i == (concurrency - 1) {
 			// Add the remaining bytes in the last request
 			max += remainingSize
 		}
@@ -112,7 +104,7 @@ func parallelFetch(config Config, destFile string, length int64) error {
 			if err != nil {
 				errs = append(errs, err)
 			}
-		}(min, max, i)
+		}(min, max, int(i))
 	}
 	wg.Wait()
 
@@ -123,9 +115,7 @@ func parallelFetch(config Config, destFile string, length int64) error {
 	if err := assembleChunks(config, destFile, chunksDir); err != nil {
 		return err
 	}
-	return nil
-	// TODO(c4milo): Uncomment after testing
-	// return os.RemoveAll(chunksDir)
+	return os.RemoveAll(chunksDir)
 }
 
 // assembleChunks join all the data pieces together
@@ -147,11 +137,8 @@ func assembleChunks(config Config, destFile, chunksDir string) error {
 	return nil
 }
 
-// fetch downloads files using only one unbuffered HTTP connection, supports
-// resuming downloads if interrupted as well.
-// Even though this function is being called concurrently there is no need to
-// sincronize "report" as we are only adding up to the progress value, in other
-// words, the operation is commutative no matter the concurrency level.
+// fetch downloads files using one unbuffered HTTP connection and supports
+// resuming downloads if interrupted.
 func fetch(config Config, destFile string, min, max int64, report *ProgressReport) error {
 	client := new(http.Client)
 	req, err := http.NewRequest("GET", config.URL, nil)
@@ -193,20 +180,12 @@ func fetch(config Config, destFile string, min, max int64, report *ProgressRepor
 		report: report,
 	}
 
-	brange := fmt.Sprintf("bytes=%d-%d", min, max)
+	brange := fmt.Sprintf("bytes=%d-%d", min, max-1)
 	if max == -1 {
 		brange = fmt.Sprintf("bytes=%d-", min)
-
-		// We need this timer to close the progress channel for servers that do
-		// not return a content-length header. Without this, the user's code
-		// is going to block forever reading from the progress channel.
-		writer.timer = time.AfterFunc(1*time.Second, func() {
-			if config.Progress != nil {
-				close(config.Progress)
-			}
-		})
 	}
 
+	// fmt.Printf("Downloading chunk: %s\n", brange)
 	req.Header.Add("Range", brange)
 	res, err := client.Do(req)
 	if err != nil {
@@ -222,41 +201,23 @@ func fetch(config Config, destFile string, min, max int64, report *ProgressRepor
 	return nil
 }
 
-// fetchWriter implements a custom io.Writer so we can send granular progress reports
+// fetchWriter implements a custom io.Writer so we can send granular
+// progress reports when streaming down content.
 type fetchWriter struct {
 	io.Writer
 	report *ProgressReport
 	config Config
-	timer  *time.Timer
 }
 
 func (fw *fetchWriter) Write(b []byte) (int, error) {
-	if fw.timer != nil {
-		fw.timer.Reset(1 * time.Second)
-	}
-
 	n, err := fw.Writer.Write(b)
-	fw.report.Progress += int64(n)
 
-	fmt.Printf("%+v\n", fw.report)
 	if fw.config.Progress != nil {
-		sendProgress(fw.config, *fw.report)
+		fw.report.Lock()
+		fw.report.Progress += int64(n)
+		fw.config.Progress <- *fw.report
+		fw.report.Unlock()
 	}
+
 	return n, err
-}
-
-// sendProgress sends download progress to user provided channel.
-func sendProgress(c Config, report ProgressReport) {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("channel was closed and we are still reporting download progress? Something strange happened")
-		}
-	}()
-
-	//fmt.Println(report)
-	c.Progress <- report
-
-	if report.Progress >= report.Total {
-		close(c.Progress)
-	}
 }

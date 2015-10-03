@@ -54,16 +54,17 @@ func TestFetchWithContentLength(t *testing.T) {
 	progress := make(chan ProgressReport)
 	go func() {
 		err := Fetch(Config{
-			URL: ts.URL,
-			//DestDir:  os.TempDir(),
+			URL:         ts.URL,
+			DestDir:     os.TempDir(),
 			Progress:    progress,
-			Concurrency: 2,
+			Concurrency: 50,
 		})
 		assert.Ok(t, err)
 	}()
 
 	var total int64
 	for p := range progress {
+		//fmt.Printf("%d of %d\n", p.Progress, p.Total)
 		total = p.Progress
 	}
 	assert.Equals(t, int64(10485760), total)
