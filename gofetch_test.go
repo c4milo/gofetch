@@ -104,6 +104,7 @@ func TestResume(t *testing.T) {
 	fixtureFile.Close()
 	chunkFile.Close()
 
+	done := make(chan bool)
 	progress := make(chan ProgressReport)
 	var file *os.File
 	go func() {
@@ -115,6 +116,7 @@ func TestResume(t *testing.T) {
 			Concurrency: 1,
 		})
 		assert.Ok(t, err)
+		done <- true
 	}()
 
 	var total int64
@@ -124,6 +126,7 @@ func TestResume(t *testing.T) {
 	}
 	// It should only write to disk the remaining bytes
 	assert.Equals(t, int64(10276045), total)
+	<-done
 
 	// Checks that the donwloaded file has the same size as the test fixture
 	fi, err := file.Stat()
