@@ -48,21 +48,21 @@ func setDefaults(config *Config) {
 
 // Fetch downloads content from the provided URL. It supports resuming and
 // parallelizing downloads while being very memory efficient.
-func Fetch(config Config) error {
+func Fetch(config Config) (*os.File, error) {
 	setDefaults(&config)
 
 	if config.URL == "" {
-		return errors.New("URL is required")
+		return nil, errors.New("URL is required")
 	}
 
 	// We need to make a preflight request to get the size of the content.
 	res, err := http.Head(config.URL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if !strings.HasPrefix(res.Status, "2") {
-		return errors.New("HTTP requests returned a non 2xx status code")
+		return nil, errors.New("HTTP requests returned a non 2xx status code")
 	}
 
 	destFile := filepath.Join(config.DestDir, path.Base(config.URL))
@@ -71,7 +71,7 @@ func Fetch(config Config) error {
 
 // parallelFetch fetches using multiple goroutines, each piece is streamed down
 // to disk which makes it very efficient in terms of memory usage.
-func parallelFetch(config Config, destFile string, length int64) error {
+func parallelFetch(config Config, destFile string, length int64) (*os.File, error) {
 	if config.Progress != nil {
 		defer close(config.Progress)
 	}
@@ -109,32 +109,38 @@ func parallelFetch(config Config, destFile string, length int64) error {
 	wg.Wait()
 
 	if len(errs) > 0 {
-		return fmt.Errorf("Errors: \n %s", errs)
+		return nil, fmt.Errorf("Errors: \n %s", errs)
 	}
 
-	if err := assembleChunks(config, destFile, chunksDir); err != nil {
-		return err
+	file, err := assembleChunks(config, destFile, chunksDir)
+	if err != nil {
+		return nil, err
 	}
-	return os.RemoveAll(chunksDir)
+
+	os.RemoveAll(chunksDir)
+	// Makes sure to return the file on the correct offset so it can be
+	// consumed by users.
+	file.Seek(0, 0)
+
+	return file, nil
 }
 
 // assembleChunks join all the data pieces together
-func assembleChunks(config Config, destFile, chunksDir string) error {
+func assembleChunks(config Config, destFile, chunksDir string) (*os.File, error) {
 	file, err := os.Create(destFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer file.Close()
 
 	for i := 0; i < config.Concurrency; i++ {
 		chunkFile, err := os.Open(filepath.Join(chunksDir, strconv.Itoa(i)))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		io.Copy(file, chunkFile)
 		chunkFile.Close()
 	}
-	return nil
+	return file, nil
 }
 
 // fetch downloads files using one unbuffered HTTP connection and supports
@@ -170,7 +176,8 @@ func fetch(config Config, destFile string, min, max int64, report *ProgressRepor
 
 	// Adjusts min to resume file download from where it was left off.
 	if currSize > 0 {
-		min = min + currSize + 1
+		min = min + currSize
+		//fmt.Printf("File part exists, resuming at %d\n", min)
 	}
 
 	// Prepares writer to report download progress.
@@ -185,7 +192,7 @@ func fetch(config Config, destFile string, min, max int64, report *ProgressRepor
 		brange = fmt.Sprintf("bytes=%d-", min)
 	}
 
-	// fmt.Printf("Downloading chunk: %s\n", brange)
+	//fmt.Printf("Downloading chunk: %s\n", brange)
 	req.Header.Add("Range", brange)
 	res, err := client.Do(req)
 	if err != nil {
