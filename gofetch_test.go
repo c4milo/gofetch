@@ -1,6 +1,8 @@
 package gofetch
 
 import (
+	"crypto/sha512"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -119,9 +121,18 @@ func TestResume(t *testing.T) {
 	// It should only write to disk the remaining bytes
 	assert.Equals(t, int64(10276045), total)
 
-	// Let's check that the donwloaded file has the same size as the test fixture
+	// Checks that the donwloaded file has the same size as the test fixture
 	fi, err := file.Stat()
 	assert.Ok(t, err)
 	defer file.Close()
 	assert.Equals(t, int64(10485760), fi.Size())
+
+	// Checks file integrity
+	hasher := sha512.New()
+	_, err = io.Copy(hasher, file)
+	assert.Ok(t, err)
+
+	result := fmt.Sprintf("%x", hasher.Sum(nil))
+	assert.Equals(t, "4ff6e159db38d46a665f26e9f82b98134238c0457cc82727a5258b7184773e4967068cc0eecf3928ecd079f3aea6e22aac024847c6d76c0329c4635c4b6ae327", result)
+	file.Close()
 }
