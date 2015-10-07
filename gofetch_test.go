@@ -26,11 +26,13 @@ func TestFetchWithoutContentLength(t *testing.T) {
 		assert.Cond(t, file != nil, "Failed loading fixture file")
 		defer file.Close()
 
-		io.Copy(w, file)
+		_, err = io.Copy(w, file)
+		//assert.Ok(t, err)
 	}))
 	defer ts.Close()
 
 	progress := make(chan ProgressReport)
+	done := make(chan bool)
 	go func() {
 		_, err := Fetch(Config{
 			URL:      ts.URL,
@@ -38,14 +40,17 @@ func TestFetchWithoutContentLength(t *testing.T) {
 			Progress: progress,
 		})
 		assert.Ok(t, err)
+		done <- true
 	}()
 
 	var total int64
 	for p := range progress {
-		total = p.Progress
+		total += p.WrittenBytes
 		assert.Equals(t, int64(-1), p.Total)
 	}
 	assert.Equals(t, int64(10485760), total)
+	<-done
+	// Now we can close the test server and let the deferred function to run.
 }
 
 func TestFetchWithContentLength(t *testing.T) {
@@ -60,6 +65,7 @@ func TestFetchWithContentLength(t *testing.T) {
 	defer ts.Close()
 
 	progress := make(chan ProgressReport)
+	done := make(chan bool)
 	go func() {
 		_, err := Fetch(Config{
 			URL:         ts.URL,
@@ -68,14 +74,16 @@ func TestFetchWithContentLength(t *testing.T) {
 			Concurrency: 50,
 		})
 		assert.Ok(t, err)
+		done <- true
 	}()
 
 	var total int64
 	for p := range progress {
 		//fmt.Printf("%d of %d\n", p.Progress, p.Total)
-		total = p.Progress
+		total += p.WrittenBytes
 	}
 	assert.Equals(t, int64(10485760), total)
+	<-done
 }
 
 func TestResume(t *testing.T) {
@@ -100,7 +108,9 @@ func TestResume(t *testing.T) {
 	chunkFile, err := os.Create(filepath.Join(chunksDir, "0"))
 	assert.Ok(t, err)
 
-	io.Copy(chunkFile, fixtureFile)
+	_, err = io.Copy(chunkFile, fixtureFile)
+	assert.Ok(t, err)
+
 	fixtureFile.Close()
 	chunkFile.Close()
 
@@ -122,11 +132,12 @@ func TestResume(t *testing.T) {
 	var total int64
 	for p := range progress {
 		//fmt.Printf("%d of %d\n", p.Progress, p.Total)
-		total = p.Progress
+		total += p.WrittenBytes
 	}
 	// It should only write to disk the remaining bytes
 	assert.Equals(t, int64(10276045), total)
 	<-done
+	// Fetch finished and we can now use the file without causing data races.
 
 	// Checks that the donwloaded file has the same size as the test fixture
 	fi, err := file.Stat()

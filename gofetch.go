@@ -19,11 +19,10 @@ import (
 
 // ProgressReport represents the current download progress of a given file
 type ProgressReport struct {
-	sync.RWMutex
 	// Total length in bytes of the file being downloaded
 	Total int64
-	// Current progress in bytes
-	Progress int64
+	// Written bytes to disk on a write by write basis. It does not accumulate.
+	WrittenBytes int64
 }
 
 // Config allows to configure the download process.
@@ -87,7 +86,10 @@ func parallelFetch(config Config, destFile string, length int64) (*os.File, erro
 	chunkSize := length / concurrency
 	remainingSize := length % concurrency
 	chunksDir := filepath.Join(config.DestDir, path.Base(config.URL)+".chunks")
-	os.MkdirAll(chunksDir, 0760)
+
+	if err := os.MkdirAll(chunksDir, 0760); err != nil {
+		return nil, err
+	}
 
 	var errs []error
 	for i := int64(0); i < concurrency; i++ {
@@ -104,7 +106,7 @@ func parallelFetch(config Config, destFile string, length int64) (*os.File, erro
 			defer wg.Done()
 			chunkFile := filepath.Join(chunksDir, strconv.Itoa(chunkNumber))
 
-			err := fetch(config, chunkFile, min, max, &report)
+			err := fetch(config, chunkFile, min, max, report)
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -122,11 +124,15 @@ func parallelFetch(config Config, destFile string, length int64) (*os.File, erro
 	}
 
 	os.RemoveAll(chunksDir)
+
 	// Makes sure to return the file on the correct offset so it can be
 	// consumed by users.
-	file.Seek(0, 0)
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		return nil, err
+	}
 
-	return file, nil
+	return file, err
 }
 
 // assembleChunks join all the data pieces together
@@ -141,7 +147,10 @@ func assembleChunks(config Config, destFile, chunksDir string) (*os.File, error)
 		if err != nil {
 			return nil, err
 		}
-		io.Copy(file, chunkFile)
+
+		if _, err := io.Copy(file, chunkFile); err != nil {
+			return nil, err
+		}
 		chunkFile.Close()
 	}
 	return file, nil
@@ -149,7 +158,7 @@ func assembleChunks(config Config, destFile, chunksDir string) (*os.File, error)
 
 // fetch downloads files using one unbuffered HTTP connection and supports
 // resuming downloads if interrupted.
-func fetch(config Config, destFile string, min, max int64, report *ProgressReport) error {
+func fetch(config Config, destFile string, min, max int64, report ProgressReport) error {
 	client := new(http.Client)
 	req, err := http.NewRequest("GET", config.URL, nil)
 	if err != nil {
@@ -208,15 +217,15 @@ func fetch(config Config, destFile string, min, max int64, report *ProgressRepor
 		return errors.New("HTTP requests returned a non 2xx status code")
 	}
 
-	io.Copy(&writer, res.Body)
-	return nil
+	_, err = io.Copy(&writer, res.Body)
+	return err
 }
 
 // fetchWriter implements a custom io.Writer so we can send granular
 // progress reports when streaming down content.
 type fetchWriter struct {
 	io.Writer
-	report *ProgressReport
+	report ProgressReport
 	config Config
 }
 
@@ -224,10 +233,8 @@ func (fw *fetchWriter) Write(b []byte) (int, error) {
 	n, err := fw.Writer.Write(b)
 
 	if fw.config.Progress != nil {
-		fw.report.Lock()
-		fw.report.Progress += int64(n)
-		fw.config.Progress <- *fw.report
-		fw.report.Unlock()
+		fw.report.WrittenBytes = int64(n)
+		fw.config.Progress <- fw.report
 	}
 
 	return n, err
