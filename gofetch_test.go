@@ -21,13 +21,16 @@ import (
 
 func TestFetchWithoutContentLength(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			return
+		}
 		file, err := os.Open("./fixtures/test")
 		assert.Ok(t, err)
 		assert.Cond(t, file != nil, "Failed loading fixture file")
 		defer file.Close()
 
 		_, err = io.Copy(w, file)
-		//assert.Ok(t, err)
+		assert.Ok(t, err)
 	}))
 	defer ts.Close()
 
