@@ -104,7 +104,24 @@ func (gf *goFetch) Fetch(url string, opts ...Option) (*os.File, error) {
 		return nil, errors.New("HTTP requests returned a non 2xx status code")
 	}
 
-	destFilePath := filepath.Join(gf.destDir, path.Base(url))
+	fileName := path.Base(url)
+
+	var etag string
+	if gf.etag {
+		etag = res.Header.Get("ETag")
+		fileName += etag
+	}
+
+	destFilePath := filepath.Join(gf.destDir, fileName)
+
+	fi, err := os.Stat(destFilePath)
+	if err == nil && fi.Size() == res.ContentLength {
+		if gf.progressCh != nil {
+			close(gf.progressCh)
+		}
+		return os.Open(destFilePath)
+	}
+
 	return gf.parallelFetch(url, destFilePath, res.ContentLength)
 }
 
@@ -230,7 +247,6 @@ func (gf *goFetch) fetch(url, destFile string, min, max int64, report ProgressRe
 	// Adjusts min to resume file download from where it was left off.
 	if currSize > 0 {
 		min = min + currSize
-		//fmt.Printf("File part exists, resuming at %d\n", min)
 	}
 
 	// Prepares writer to report download progress.
@@ -245,7 +261,6 @@ func (gf *goFetch) fetch(url, destFile string, min, max int64, report ProgressRe
 		brange = fmt.Sprintf("bytes=%d-", min)
 	}
 
-	//fmt.Printf("Downloading chunk: %s\n", brange)
 	req.Header.Add("Range", brange)
 	res, err := client.Do(req)
 	if err != nil {
