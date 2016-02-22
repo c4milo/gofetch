@@ -9,7 +9,7 @@ Go library to download files from the internerds.
 * Allows parallel downloading of a single file by requesting multiple data chunks at once over HTTP.
 * Reports download progress through a Go channel if indicated to do so.
 * Supports ETags, skipping downloading a file if it hasn't changed on the server.
-* Support download integrity checks if file checksums are provided.
+* Supports checking downloads integrity if file checksums are provided.
 * Can be combined with https://github.com/cenkalti/backoff to support retries with exponential back-off
 
 
@@ -25,10 +25,10 @@ import (
 func main() {
 	progressCh := make(chan ProgressReport)
 	gf := gofetch.New(
-		gf.DestDir("/tmp"),
-		gf.Progress(progressCh),
-		gf.Concurrency(10),
-		gf.ETag(true),
+		gofetch.DestDir("/tmp"),
+		gofetch.Progress(progressCh),
+		gofetch.Concurrency(10),
+		gofetch.ETag(true),
 
 	)
 

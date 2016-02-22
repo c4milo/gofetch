@@ -26,31 +26,7 @@ type ProgressReport struct {
 	WrittenBytes int64
 }
 
-// Config allows to configure the download process.
-type Config struct {
-	// File to download
-	URL string
-	// Destination directory where the file is going to be downloaded to
-	DestDir string
-	// Concurrency level for parallel downloads
-	Concurrency int
-	// If not nil, downloading progress is going to be reported through
-	// this channel.
-	Progress chan<- ProgressReport
-}
-
-// setDefaults sets default values to config struct.
-func setDefaults(config *Config) {
-	if config.Concurrency == 0 {
-		config.Concurrency = 1
-	}
-
-	if config.DestDir == "" {
-		config.DestDir = "./"
-	}
-}
-
-// Fetch ...
+// goFetch represents an instance of gofetch, holding global configuration options.
 type goFetch struct {
 	destDir     string
 	etag        bool

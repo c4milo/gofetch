@@ -76,7 +76,7 @@ func TestFetchWithContentLength(t *testing.T) {
 
 	var total int64
 	for p := range progressCh {
-		//fmt.Printf("%d of %d\n", p.Progress, p.Total)
+		//fmt.Printf("%d of %d\n", p.WrittenBytes, p.Total)
 		total += p.WrittenBytes
 	}
 	assert.Equals(t, int64(10485760), total)
@@ -124,7 +124,7 @@ func TestResume(t *testing.T) {
 
 	var total int64
 	for p := range progressCh {
-		//fmt.Printf("%d of %d\n", p.Progress, p.Total)
+		//fmt.Printf("%d of %d\n", p.WrittenBytes, p.Total)
 		total += p.WrittenBytes
 	}
 	// It should only write to disk the remaining bytes
