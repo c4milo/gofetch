@@ -68,7 +68,7 @@ func ETag(enable bool) Option {
 	}
 }
 
-// New creates a new instance of GoFetch with the given options.
+// New creates a new instance of goFetch with the given options.
 func New(opts ...Option) *goFetch {
 	// Creates instance and assigns defaults.
 	gofetch := &goFetch{
