@@ -34,20 +34,18 @@ func TestFetchWithoutContentLength(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	progress := make(chan ProgressReport)
+	progressCh := make(chan ProgressReport)
 	done := make(chan bool)
+	gf := New(Progress(progressCh), DestDir(os.TempDir()))
+
 	go func() {
-		_, err := Fetch(Config{
-			URL:      ts.URL,
-			DestDir:  os.TempDir(),
-			Progress: progress,
-		})
+		_, err := gf.Fetch(ts.URL)
 		assert.Ok(t, err)
 		done <- true
 	}()
 
 	var total int64
-	for p := range progress {
+	for p := range progressCh {
 		total += p.WrittenBytes
 		assert.Equals(t, int64(-1), p.Total)
 	}
@@ -67,21 +65,17 @@ func TestFetchWithContentLength(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	progress := make(chan ProgressReport)
+	progressCh := make(chan ProgressReport)
 	done := make(chan bool)
+	gf := New(Progress(progressCh), DestDir(os.TempDir()), Concurrency(50))
 	go func() {
-		_, err := Fetch(Config{
-			URL:         ts.URL,
-			DestDir:     os.TempDir(),
-			Progress:    progress,
-			Concurrency: 50,
-		})
+		_, err := gf.Fetch(ts.URL)
 		assert.Ok(t, err)
 		done <- true
 	}()
 
 	var total int64
-	for p := range progress {
+	for p := range progressCh {
 		//fmt.Printf("%d of %d\n", p.Progress, p.Total)
 		total += p.WrittenBytes
 	}
@@ -118,22 +112,18 @@ func TestResume(t *testing.T) {
 	chunkFile.Close()
 
 	done := make(chan bool)
-	progress := make(chan ProgressReport)
+	progressCh := make(chan ProgressReport)
 	var file *os.File
+	gf := New(Progress(progressCh), DestDir(destDir), Concurrency(1))
 	go func() {
 		var err error
-		file, err = Fetch(Config{
-			URL:         ts.URL,
-			DestDir:     destDir,
-			Progress:    progress,
-			Concurrency: 1,
-		})
+		file, err = gf.Fetch(ts.URL)
 		assert.Ok(t, err)
 		done <- true
 	}()
 
 	var total int64
-	for p := range progress {
+	for p := range progressCh {
 		//fmt.Printf("%d of %d\n", p.Progress, p.Total)
 		total += p.WrittenBytes
 	}
