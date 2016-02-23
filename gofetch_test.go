@@ -36,10 +36,10 @@ func TestFetchWithoutContentLength(t *testing.T) {
 
 	progressCh := make(chan ProgressReport)
 	done := make(chan bool)
-	gf := New(Progress(progressCh), DestDir(os.TempDir()))
+	gf := New(DestDir(os.TempDir()))
 
 	go func() {
-		_, err := gf.Fetch(ts.URL)
+		_, err := gf.Fetch(ts.URL, progressCh)
 		assert.Ok(t, err)
 		done <- true
 	}()
@@ -67,9 +67,9 @@ func TestFetchWithContentLength(t *testing.T) {
 
 	progressCh := make(chan ProgressReport)
 	done := make(chan bool)
-	gf := New(Progress(progressCh), DestDir(os.TempDir()), Concurrency(50))
+	gf := New(DestDir(os.TempDir()), Concurrency(50))
 	go func() {
-		_, err := gf.Fetch(ts.URL)
+		_, err := gf.Fetch(ts.URL, progressCh)
 		assert.Ok(t, err)
 		done <- true
 	}()
@@ -114,10 +114,10 @@ func TestResume(t *testing.T) {
 	done := make(chan bool)
 	progressCh := make(chan ProgressReport)
 	var file *os.File
-	gf := New(Progress(progressCh), DestDir(destDir), Concurrency(1))
+	gf := New(DestDir(destDir), Concurrency(1))
 	go func() {
 		var err error
-		file, err = gf.Fetch(ts.URL)
+		file, err = gf.Fetch(ts.URL, progressCh)
 		assert.Ok(t, err)
 		done <- true
 	}()
@@ -163,15 +163,14 @@ func TestEtagSupport(t *testing.T) {
 	defer ts.Close()
 
 	progressCh := make(chan ProgressReport)
-	gf := New(Progress(progressCh), DestDir("./fixtures"), Concurrency(1))
+	gf := New(DestDir("./fixtures"), Concurrency(1))
 
 	go func() {
-		_, err := gf.Fetch(ts.URL + "/test")
+		_, err := gf.Fetch(ts.URL+"/test", progressCh)
 		assert.Ok(t, err)
 	}()
 
 	var progressCount int
-
 	for range progressCh {
 		progressCount++
 	}

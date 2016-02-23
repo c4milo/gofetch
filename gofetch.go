@@ -30,7 +30,6 @@ type ProgressReport struct {
 type goFetch struct {
 	destDir     string
 	etag        bool
-	progressCh  chan<- ProgressReport
 	concurrency int
 }
 
@@ -41,13 +40,6 @@ type Option func(*goFetch)
 func DestDir(dir string) Option {
 	return func(f *goFetch) {
 		f.destDir = dir
-	}
-}
-
-// Progress allows you to set a progress reporting channel for downloads.
-func Progress(progress chan<- ProgressReport) Option {
-	return func(f *goFetch) {
-		f.progressCh = progress
 	}
 }
 
@@ -85,13 +77,9 @@ func New(opts ...Option) *goFetch {
 
 // Fetch downloads content from the provided URL. It supports resuming and
 // parallelizing downloads while being very memory efficient.
-func (gf *goFetch) Fetch(url string, opts ...Option) (*os.File, error) {
+func (gf *goFetch) Fetch(url string, progressCh chan<- ProgressReport) (*os.File, error) {
 	if url == "" {
 		return nil, errors.New("URL is required")
-	}
-
-	for _, opt := range opts {
-		opt(gf)
 	}
 
 	// We need to make a preflight request to get the size of the content.
@@ -116,24 +104,20 @@ func (gf *goFetch) Fetch(url string, opts ...Option) (*os.File, error) {
 
 	fi, err := os.Stat(destFilePath)
 	if err == nil && fi.Size() == res.ContentLength {
-		if gf.progressCh != nil {
-			close(gf.progressCh)
+		if progressCh != nil {
+			close(progressCh)
 		}
 		return os.Open(destFilePath)
 	}
 
-	return gf.parallelFetch(url, destFilePath, res.ContentLength)
+	return gf.parallelFetch(url, destFilePath, res.ContentLength, progressCh)
 }
 
 // parallelFetch fetches using multiple goroutines, each piece is streamed down
 // to disk which makes it very efficient in terms of memory usage.
-func (gf *goFetch) parallelFetch(url, destFilePath string, length int64) (*os.File, error) {
-	// If a progress channel was passed we need to close it once a download
-	// finishes to unblock any consumers of it.
-	// FIXME: If users decide to use gf.Fetch() in parallel, the channel will be
-	// closed once the first download finishes.
-	if gf.progressCh != nil {
-		defer close(gf.progressCh)
+func (gf *goFetch) parallelFetch(url, destFilePath string, length int64, progressCh chan<- ProgressReport) (*os.File, error) {
+	if progressCh != nil {
+		defer close(progressCh)
 	}
 
 	var wg sync.WaitGroup
@@ -163,7 +147,7 @@ func (gf *goFetch) parallelFetch(url, destFilePath string, length int64) (*os.Fi
 			defer wg.Done()
 			chunkFile := filepath.Join(chunksDir, strconv.Itoa(chunkNumber))
 
-			err := gf.fetch(url, chunkFile, min, max, report)
+			err := gf.fetch(url, chunkFile, min, max, report, progressCh)
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -215,7 +199,8 @@ func (gf *goFetch) assembleChunks(destFile, chunksDir string) (*os.File, error) 
 
 // fetch downloads files using one unbuffered HTTP connection and supports
 // resuming downloads if interrupted.
-func (gf *goFetch) fetch(url, destFile string, min, max int64, report ProgressReport) error {
+func (gf *goFetch) fetch(url, destFile string, min, max int64,
+	report ProgressReport, progressCh chan<- ProgressReport) error {
 	client := new(http.Client)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -252,7 +237,7 @@ func (gf *goFetch) fetch(url, destFile string, min, max int64, report ProgressRe
 	// Prepares writer to report download progress.
 	writer := fetchWriter{
 		Writer:         file,
-		progressCh:     gf.progressCh,
+		progressCh:     progressCh,
 		progressReport: report,
 	}
 

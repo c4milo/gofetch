@@ -26,17 +26,29 @@ func main() {
 	progressCh := make(chan ProgressReport)
 	gf := gofetch.New(
 		gofetch.DestDir("/tmp"),
-		gofetch.Progress(progressCh),
 		gofetch.Concurrency(10),
 		gofetch.ETag(true),
 
 	)
 
-	f, err := gf.Fetch(
-	"http://releases.ubuntu.com/15.10/ubuntu-15.10-server-amd64.iso",
-	gofetch.CheckIntegrity(gofetch.SHA256, "adf1234adf13243"))
-	if err != nil {
-		panic(err)
+	progressCh := make(chan gofetch.ProgressReport)
+
+	var myFile *os.File
+	go func() {
+		var err error
+		myFile, err = gf.Fetch(
+		"http://releases.ubuntu.com/15.10/ubuntu-15.10-server-amd64.iso",
+		progressCh)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	// pogressCh is close by gofetch once a download finishes
+	for p := range progressCh {
+		// p.WrittenBytes does not accumulate, it represents the chunk size written
+		// in the current operation.
+		fmt.Printf("%d of %d\n", p.WrittenBytes, p.Total)
 	}
 
 	destFile, err := os.Create("/tmp/myfile")
@@ -44,7 +56,7 @@ func main() {
 		panic(err)
 	}
 
-	if _, err := io.Copy(destFile, f); err != nil {
+	if _, err := io.Copy(destFile, myFile); err != nil {
 		panic(err)
 	}
 
