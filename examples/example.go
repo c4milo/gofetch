@@ -10,7 +10,7 @@ import (
 func main() {
 	gf := gofetch.New(
 		gofetch.DestDir("/tmp"),
-		gofetch.Concurrency(10),
+		gofetch.Concurrency(100),
 		gofetch.ETag(true),
 	)
 

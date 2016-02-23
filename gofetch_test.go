@@ -8,6 +8,7 @@ import (
 	"crypto/sha512"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/hooklift/assert"
+	"github.com/mitchellh/go-homedir"
 )
 
 func TestFetchWithoutContentLength(t *testing.T) {
@@ -36,8 +38,12 @@ func TestFetchWithoutContentLength(t *testing.T) {
 
 	progressCh := make(chan ProgressReport)
 	done := make(chan bool)
-	gf := New(DestDir(os.TempDir()))
 
+	destDir, err := ioutil.TempDir(os.TempDir(), "no-content-length")
+	assert.Ok(t, err)
+	defer os.RemoveAll(destDir)
+
+	gf := New(DestDir(destDir))
 	go func() {
 		_, err := gf.Fetch(ts.URL, progressCh)
 		assert.Ok(t, err)
@@ -67,7 +73,12 @@ func TestFetchWithContentLength(t *testing.T) {
 
 	progressCh := make(chan ProgressReport)
 	done := make(chan bool)
-	gf := New(DestDir(os.TempDir()), Concurrency(50))
+
+	destDir, err := ioutil.TempDir(os.TempDir(), "content-length")
+	assert.Ok(t, err)
+	defer os.RemoveAll(destDir)
+
+	gf := New(DestDir(destDir), Concurrency(50))
 	go func() {
 		_, err := gf.Fetch(ts.URL, progressCh)
 		assert.Ok(t, err)
@@ -94,9 +105,12 @@ func TestResume(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	destDir := os.TempDir()
+	destDir, err := ioutil.TempDir(os.TempDir(), "resume")
+	assert.Ok(t, err)
+	defer os.RemoveAll(destDir)
+
 	chunksDir := filepath.Join(destDir, path.Base(ts.URL)+".chunks")
-	err := os.MkdirAll(chunksDir, 0760)
+	err = os.MkdirAll(chunksDir, 0760)
 	assert.Ok(t, err)
 
 	fixtureFile, err := os.Open("./fixtures/test-resume")
@@ -149,23 +163,30 @@ func TestResume(t *testing.T) {
 }
 
 func TestEtagSupport(t *testing.T) {
-	etag := "7h153746154w350m3"
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		file, err := os.Open("./fixtures/test")
 		assert.Ok(t, err)
 		assert.Cond(t, file != nil, "Failed loading fixture file")
 		defer file.Close()
 
-		w.Header().Add("Etag", etag)
+		w.Header().Add("Etag", "7h153746154w350m3")
 		http.ServeContent(w, r, file.Name(), time.Time{}, file)
 	}))
 	defer ts.Close()
 
-	progressCh := make(chan ProgressReport)
-	gf := New(DestDir("./fixtures"), Concurrency(1))
+	destDir, err := ioutil.TempDir(os.TempDir(), "etag")
+	assert.Ok(t, err)
+	defer os.RemoveAll(destDir)
 
+	gf := New(DestDir(destDir), Concurrency(1))
+
+	// Fetches file for the first tim
+	_, err = gf.Fetch(ts.URL+"/test", nil)
+	assert.Ok(t, err)
+
+	progressCh := make(chan ProgressReport)
 	go func() {
+		// Attempts to fetch file once again.
 		_, err := gf.Fetch(ts.URL+"/test", progressCh)
 		assert.Ok(t, err)
 	}()
@@ -175,5 +196,13 @@ func TestEtagSupport(t *testing.T) {
 		progressCount++
 	}
 
+	// Since the file was already downloaded, there shouldn't be any download
+	// progress reported.
 	assert.Equals(t, 0, progressCount)
+
+	// Cleans up ~/.gofetch work dir
+	dir, err := homedir.Dir()
+	assert.Ok(t, err)
+	err = os.RemoveAll(filepath.Join(dir, ".gofetch"))
+	assert.Ok(t, err)
 }
