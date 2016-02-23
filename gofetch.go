@@ -39,6 +39,7 @@ type goFetch struct {
 type option func(*goFetch)
 
 // DestDir allows you to set the destination directory for the downloaded files.
+// By default it is set to: ./
 func DestDir(dir string) option {
 	return func(f *goFetch) {
 		f.destDir = dir
@@ -46,7 +47,7 @@ func DestDir(dir string) option {
 }
 
 // Concurrency allows you to set the number of goroutines used to download a specific
-// file.
+// file. By default it is set to 1.
 func Concurrency(c int) option {
 	return func(f *goFetch) {
 		f.concurrency = c
@@ -54,8 +55,12 @@ func Concurrency(c int) option {
 }
 
 // ETag allows you to disable or enable ETag support, meaning that if an already
-// downloaded file is currently on disk and matches the ETag returned by the server,
-// it will not be downloaded again.
+// downloaded file is currently on disk and matches the ETag value returned by the server,
+// it will not be downloaded again. By default it is set to true.
+
+// Be aware that different servers, serving the same file, are likely to return
+// different ETag values, causing the file to be re-downloaded, even though it
+// might already exist on disk.
 func ETag(enable bool) option {
 	return func(f *goFetch) {
 		f.etag = enable
