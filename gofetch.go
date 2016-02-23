@@ -27,8 +27,8 @@ type ProgressReport struct {
 	WrittenBytes int64
 }
 
-// goFetch represents an instance of gofetch, holding global configuration options.
-type goFetch struct {
+// Fetcher represents an instance of gofetch, holding global configuration options.
+type Fetcher struct {
 	destDir     string
 	etag        bool
 	concurrency int
@@ -36,12 +36,12 @@ type goFetch struct {
 }
 
 // option as explained in http://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html
-type option func(*goFetch)
+type option func(*Fetcher)
 
 // DestDir allows you to set the destination directory for the downloaded files.
 // By default it is set to: ./
 func DestDir(dir string) option {
-	return func(f *goFetch) {
+	return func(f *Fetcher) {
 		f.destDir = dir
 	}
 }
@@ -49,7 +49,7 @@ func DestDir(dir string) option {
 // Concurrency allows you to set the number of goroutines used to download a specific
 // file. By default it is set to 1.
 func Concurrency(c int) option {
-	return func(f *goFetch) {
+	return func(f *Fetcher) {
 		f.concurrency = c
 	}
 }
@@ -62,7 +62,7 @@ func Concurrency(c int) option {
 // different ETag values, causing the file to be re-downloaded, even though it
 // might already exist on disk.
 func ETag(enable bool) option {
-	return func(f *goFetch) {
+	return func(f *Fetcher) {
 		f.etag = enable
 	}
 }
@@ -78,9 +78,9 @@ func init() {
 }
 
 // New creates a new instance of goFetch with the given options.
-func New(opts ...option) *goFetch {
+func New(opts ...option) *Fetcher {
 	// Creates instance and assigns defaults.
-	gofetch := &goFetch{
+	gofetch := &Fetcher{
 		concurrency: 1,
 		destDir:     "./",
 		etag:        true,
@@ -95,7 +95,7 @@ func New(opts ...option) *goFetch {
 
 // Fetch downloads content from the provided URL. It supports resuming and
 // parallelizing downloads while being very memory efficient.
-func (gf *goFetch) Fetch(url string, progressCh chan<- ProgressReport) (*os.File, error) {
+func (gf *Fetcher) Fetch(url string, progressCh chan<- ProgressReport) (*os.File, error) {
 	if url == "" {
 		return nil, errors.New("URL is required")
 	}
@@ -149,7 +149,7 @@ FETCH:
 
 // parallelFetch fetches using multiple goroutines, each piece is streamed down
 // to disk which makes it very efficient in terms of memory usage.
-func (gf *goFetch) parallelFetch(url, destFilePath string, length int64, progressCh chan<- ProgressReport) (*os.File, error) {
+func (gf *Fetcher) parallelFetch(url, destFilePath string, length int64, progressCh chan<- ProgressReport) (*os.File, error) {
 	if progressCh != nil {
 		defer close(progressCh)
 	}
@@ -211,7 +211,7 @@ func (gf *goFetch) parallelFetch(url, destFilePath string, length int64, progres
 }
 
 // assembleChunks join all the data pieces together
-func (gf *goFetch) assembleChunks(destFile, chunksDir string) (*os.File, error) {
+func (gf *Fetcher) assembleChunks(destFile, chunksDir string) (*os.File, error) {
 	file, err := os.Create(destFile)
 	if err != nil {
 		return nil, err
@@ -233,7 +233,7 @@ func (gf *goFetch) assembleChunks(destFile, chunksDir string) (*os.File, error) 
 
 // fetch downloads files using one unbuffered HTTP connection and supports
 // resuming downloads if interrupted.
-func (gf *goFetch) fetch(url, destFile string, min, max int64,
+func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 	report ProgressReport, progressCh chan<- ProgressReport) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
