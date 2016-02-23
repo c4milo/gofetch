@@ -27,7 +27,7 @@ func Example() {
 		}
 	}()
 
-	// pogressCh is close by gofetch once a download finishes
+	// pogressCh is closed by gofetch once a download finishes.
 	var totalWritten int64
 	for p := range progressCh {
 		// p.WrittenBytes does not accumulate, it represents the chunk size written
