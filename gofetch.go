@@ -19,7 +19,6 @@ import (
 
 // ProgressReport represents the current download progress of a given file
 type ProgressReport struct {
-	URL string
 	// Total length in bytes of the file being downloaded
 	Total int64
 	// Written bytes to disk on a write by write basis. It does not accumulate.
