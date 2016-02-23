@@ -127,12 +127,12 @@ func TestResume(t *testing.T) {
 		//fmt.Printf("%d of %d\n", p.WrittenBytes, p.Total)
 		total += p.WrittenBytes
 	}
-	// It should only write to disk the remaining bytes
-	assert.Equals(t, int64(10276045), total)
+	// It should report the complete file size through the channel
+	assert.Equals(t, int64(10485760), total)
 	<-done
 	// Fetch finished and we can now use the file without causing data races.
 
-	// Checks that the donwloaded file has the same size as the test fixture
+	// Checks that the downloaded file has the same size as the test fixture
 	fi, err := file.Stat()
 	assert.Ok(t, err)
 	defer file.Close()
