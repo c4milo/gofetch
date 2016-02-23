@@ -34,11 +34,11 @@ type goFetch struct {
 	httpClient  *http.Client
 }
 
-// Option as explained in http://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html
-type Option func(*goFetch)
+// option as explained in http://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html
+type option func(*goFetch)
 
 // DestDir allows you to set the destination directory for the downloaded files.
-func DestDir(dir string) Option {
+func DestDir(dir string) option {
 	return func(f *goFetch) {
 		f.destDir = dir
 	}
@@ -46,7 +46,7 @@ func DestDir(dir string) Option {
 
 // Concurrency allows you to set the number of goroutines used to download a specific
 // file.
-func Concurrency(c int) Option {
+func Concurrency(c int) option {
 	return func(f *goFetch) {
 		f.concurrency = c
 	}
@@ -55,14 +55,14 @@ func Concurrency(c int) Option {
 // ETag allows you to disable or enable ETag support, meaning that if an already
 // downloaded file is currently on disk and matches the ETag returned by the server,
 // it will not be downloaded again.
-func ETag(enable bool) Option {
+func ETag(enable bool) option {
 	return func(f *goFetch) {
 		f.etag = enable
 	}
 }
 
 // New creates a new instance of goFetch with the given options.
-func New(opts ...Option) *goFetch {
+func New(opts ...option) *goFetch {
 	// Creates instance and assigns defaults.
 	gofetch := &goFetch{
 		concurrency: 1,
