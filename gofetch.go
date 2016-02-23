@@ -31,6 +31,7 @@ type goFetch struct {
 	destDir     string
 	etag        bool
 	concurrency int
+	httpClient  *http.Client
 }
 
 // Option as explained in http://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html
@@ -67,6 +68,7 @@ func New(opts ...Option) *goFetch {
 		concurrency: 1,
 		destDir:     "./",
 		etag:        true,
+		httpClient:  new(http.Client),
 	}
 
 	for _, opt := range opts {
@@ -97,7 +99,7 @@ func (gf *goFetch) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 	var etag string
 	if gf.etag {
 		etag = res.Header.Get("ETag")
-		fileName += etag
+		fileName += strings.Trim(etag, `"`)
 	}
 
 	destFilePath := filepath.Join(gf.destDir, fileName)
@@ -201,7 +203,6 @@ func (gf *goFetch) assembleChunks(destFile, chunksDir string) (*os.File, error) 
 // resuming downloads if interrupted.
 func (gf *goFetch) fetch(url, destFile string, min, max int64,
 	report ProgressReport, progressCh chan<- ProgressReport) error {
-	client := new(http.Client)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -247,7 +248,7 @@ func (gf *goFetch) fetch(url, destFile string, min, max int64,
 	}
 
 	req.Header.Add("Range", brange)
-	res, err := client.Do(req)
+	res, err := gf.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
