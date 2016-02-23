@@ -1,4 +1,4 @@
-package gofetch_test
+package main
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"github.com/c4milo/gofetch"
 )
 
-func Example() {
+func main() {
 	gf := gofetch.New(
 		gofetch.DestDir("/tmp"),
 		gofetch.Concurrency(10),
