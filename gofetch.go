@@ -230,6 +230,12 @@ func (gf *goFetch) fetch(url, destFile string, min, max int64,
 		return nil
 	}
 
+	// Report bytes written already into the file
+	if progressCh != nil {
+		report.WrittenBytes = currSize
+		progressCh <- report
+	}
+
 	// Adjusts min to resume file download from where it was left off.
 	if currSize > 0 {
 		min = min + currSize
