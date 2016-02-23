@@ -64,14 +64,16 @@ func ETag(enable bool) option {
 
 var workDir string
 
-// New creates a new instance of goFetch with the given options.
-func New(opts ...option) *goFetch {
+func init() {
 	dir, err := homedir.Dir()
 	if err != nil {
 		fmt.Printf(`Unable to get user home directory err=%s\n`, err)
 	}
 	workDir = filepath.Join(dir, ".gofetch")
+}
 
+// New creates a new instance of goFetch with the given options.
+func New(opts ...option) *goFetch {
 	// Creates instance and assigns defaults.
 	gofetch := &goFetch{
 		concurrency: 1,
