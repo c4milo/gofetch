@@ -147,3 +147,34 @@ func TestResume(t *testing.T) {
 	assert.Equals(t, "4ff6e159db38d46a665f26e9f82b98134238c0457cc82727a5258b7184773e4967068cc0eecf3928ecd079f3aea6e22aac024847c6d76c0329c4635c4b6ae327", result)
 	file.Close()
 }
+
+func TestEtagSupport(t *testing.T) {
+	etag := "7h153746154w350m3"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		file, err := os.Open("./fixtures/test")
+		assert.Ok(t, err)
+		assert.Cond(t, file != nil, "Failed loading fixture file")
+		defer file.Close()
+
+		w.Header().Add("Etag", etag)
+		http.ServeContent(w, r, file.Name(), time.Time{}, file)
+	}))
+	defer ts.Close()
+
+	progressCh := make(chan ProgressReport)
+	gf := New(Progress(progressCh), DestDir("./fixtures"), Concurrency(1))
+
+	go func() {
+		_, err := gf.Fetch(ts.URL + "/test")
+		assert.Ok(t, err)
+	}()
+
+	var progressCount int
+
+	for range progressCh {
+		progressCount++
+	}
+
+	assert.Equals(t, 0, progressCount)
+}
