@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/mitchellh/go-homedir"
 )
 
 // ProgressReport represents the current download progress of a given file
@@ -60,8 +62,16 @@ func ETag(enable bool) option {
 	}
 }
 
+var workDir string
+
 // New creates a new instance of goFetch with the given options.
 func New(opts ...option) *goFetch {
+	dir, err := homedir.Dir()
+	if err != nil {
+		fmt.Printf(`Unable to get user home directory err=%s\n`, err)
+	}
+	workDir = filepath.Join(dir, ".gofetch")
+
 	// Creates instance and assigns defaults.
 	gofetch := &goFetch{
 		concurrency: 1,
@@ -94,23 +104,39 @@ func (gf *goFetch) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 	}
 
 	fileName := path.Base(url)
+	destFilePath := filepath.Join(gf.destDir, fileName)
 
 	var etag string
 	if gf.etag {
-		etag = res.Header.Get("ETag")
-		fileName += strings.Trim(etag, `"`)
-	}
+		// Go's stdlib returns header value enclosed in double quotes.
+		etag = strings.Trim(res.Header.Get("ETag"), `"`)
 
-	destFilePath := filepath.Join(gf.destDir, fileName)
-
-	fi, err := os.Stat(destFilePath)
-	if err == nil && fi.Size() == res.ContentLength {
-		if progressCh != nil {
-			close(progressCh)
+		if etag == "" {
+			goto FETCH
 		}
-		return os.Open(destFilePath)
+
+		// Create directory if it doesn't exist, we ignore error if it already exists.
+		cacheDir := filepath.Join(workDir, fileName)
+		etagPath := filepath.Join(cacheDir, etag)
+		os.MkdirAll(cacheDir, 0700)
+
+		if _, err := os.Stat(etagPath); err == nil {
+			// Our file has been already fully downloaded, return a file
+			// descriptor to it and skip fetching altogether.
+			fi, err := os.Stat(destFilePath)
+			if err == nil && fi.Size() == res.ContentLength {
+				if progressCh != nil {
+					close(progressCh)
+				}
+				return os.Open(destFilePath)
+			}
+		} else {
+			f, _ := os.Create(etagPath)
+			f.Close()
+		}
 	}
 
+FETCH:
 	return gf.parallelFetch(url, destFilePath, res.ContentLength, progressCh)
 }
 
