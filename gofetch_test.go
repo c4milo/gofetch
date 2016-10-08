@@ -43,7 +43,7 @@ func TestFetchWithoutContentLength(t *testing.T) {
 	assert.Ok(t, err)
 	defer os.RemoveAll(destDir)
 
-	gf := New(DestDir(destDir))
+	gf := New(WithDestDir(destDir))
 	go func() {
 		_, err := gf.Fetch(ts.URL, progressCh)
 		assert.Ok(t, err)
@@ -78,7 +78,7 @@ func TestFetchWithContentLength(t *testing.T) {
 	assert.Ok(t, err)
 	defer os.RemoveAll(destDir)
 
-	gf := New(DestDir(destDir), Concurrency(50))
+	gf := New(WithDestDir(destDir), WithConcurrency(50))
 	go func() {
 		_, err := gf.Fetch(ts.URL, progressCh)
 		assert.Ok(t, err)
@@ -128,7 +128,7 @@ func TestResume(t *testing.T) {
 	done := make(chan bool)
 	progressCh := make(chan ProgressReport)
 	var file *os.File
-	gf := New(DestDir(destDir), Concurrency(1))
+	gf := New(WithDestDir(destDir), WithConcurrency(1))
 	go func() {
 		var err error
 		file, err = gf.Fetch(ts.URL, progressCh)
@@ -178,7 +178,7 @@ func TestEtagSupport(t *testing.T) {
 	assert.Ok(t, err)
 	defer os.RemoveAll(destDir)
 
-	gf := New(DestDir(destDir), Concurrency(1))
+	gf := New(WithDestDir(destDir), WithConcurrency(1))
 
 	// Fetches file for the first tim
 	_, err = gf.Fetch(ts.URL+"/test", nil)

@@ -9,9 +9,9 @@ import (
 
 func Example() {
 	gf := gofetch.New(
-		gofetch.DestDir("/tmp"),
-		gofetch.Concurrency(10),
-		gofetch.ETag(true),
+		gofetch.WithDestDir("/tmp"),
+		gofetch.WithConcurrency(10),
+		gofetch.WithETag(true),
 	)
 
 	progressCh := make(chan gofetch.ProgressReport)
