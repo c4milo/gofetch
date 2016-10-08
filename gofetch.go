@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mitchellh/go-homedir"
 )
@@ -35,35 +36,42 @@ type Fetcher struct {
 	httpClient  *http.Client
 }
 
-// option as explained in http://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html
-type option func(*Fetcher)
+// Option as explained in http://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html
+type Option func(*Fetcher)
 
-// DestDir allows you to set the destination directory for the downloaded files.
+// WithDestDir allows you to set the destination directory for the downloaded files.
 // By default it is set to: ./
-func DestDir(dir string) option {
+func WithDestDir(dir string) Option {
 	return func(f *Fetcher) {
 		f.destDir = dir
 	}
 }
 
-// Concurrency allows you to set the number of goroutines used to download a specific
+// WithConcurrency allows you to set the number of goroutines used to download a specific
 // file. By default it is set to 1.
-func Concurrency(c int) option {
+func WithConcurrency(c int) Option {
 	return func(f *Fetcher) {
 		f.concurrency = c
 	}
 }
 
-// ETag allows you to disable or enable ETag support, meaning that if an already
+// WithETag allows you to disable or enable ETag support, meaning that if an already
 // downloaded file is currently on disk and matches the ETag value returned by the server,
 // it will not be downloaded again. By default it is set to true.
-
 // Be aware that different servers, serving the same file, are likely to return
 // different ETag values, causing the file to be re-downloaded, even though it
 // might already exist on disk.
-func ETag(enable bool) option {
+func WithETag(enable bool) Option {
 	return func(f *Fetcher) {
 		f.etag = enable
+	}
+}
+
+// WithTimeout allows to set a global timeout for the HTTP client. Defaults to 30 seconds. It is effectively a
+// deadline as that's how Go's stdlib interprets it. It does not reset upon activity in the connection.
+func WithTimeout(d time.Duration) Option {
+	return func(f *Fetcher) {
+		f.httpClient.Timeout = d
 	}
 }
 
@@ -78,13 +86,13 @@ func init() {
 }
 
 // New creates a new instance of goFetch with the given options.
-func New(opts ...option) *Fetcher {
+func New(opts ...Option) *Fetcher {
 	// Creates instance and assigns defaults.
 	gofetch := &Fetcher{
 		concurrency: 1,
 		destDir:     "./",
 		etag:        true,
-		httpClient:  new(http.Client),
+		httpClient:  &http.Client{Timeout: 0},
 	}
 
 	for _, opt := range opts {
@@ -100,7 +108,8 @@ func (gf *Fetcher) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 		return nil, errors.New("URL is required")
 	}
 
-	// We need to make a preflight request to get the size of the content.
+	// We need to make a preflight request to get the size of the content and check if the server
+	// supports requesting byte ranges.
 	res, err := http.Head(url)
 	if err != nil {
 		return nil, err
@@ -108,6 +117,11 @@ func (gf *Fetcher) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 
 	if !strings.HasPrefix(res.Status, "2") {
 		return nil, errors.New("HTTP requests returned a non 2xx status code")
+	}
+
+	if res.Header.Get("Accept-Ranges") != "bytes" {
+		// Server does not support sending byte ranges, setting concurrency to 1
+		gf.concurrency = 1
 	}
 
 	fileName := path.Base(url)
@@ -122,7 +136,7 @@ func (gf *Fetcher) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 			goto FETCH
 		}
 
-		// Create directory if it doesn't exist, we ignore error if it already exists.
+		// Create directory if it doesn't exist, we ignore errors if it already exists.
 		cacheDir := filepath.Join(workDir, fileName)
 		etagPath := filepath.Join(cacheDir, etag)
 		os.MkdirAll(cacheDir, 0700)
@@ -138,7 +152,10 @@ func (gf *Fetcher) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 				return os.Open(destFilePath)
 			}
 		} else {
-			f, _ := os.Create(etagPath)
+			f, err := os.Create(etagPath)
+			if err != nil {
+				return nil, err
+			}
 			f.Close()
 		}
 	}
@@ -190,7 +207,7 @@ func (gf *Fetcher) parallelFetch(url, destFilePath string, length int64, progres
 	wg.Wait()
 
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("Errors: \n %s", errs)
+		return nil, fmt.Errorf("errors: \n %s", errs)
 	}
 
 	file, err := gf.assembleChunks(destFilePath, chunksDir)
@@ -222,11 +239,12 @@ func (gf *Fetcher) assembleChunks(destFile, chunksDir string) (*os.File, error) 
 		if err != nil {
 			return nil, err
 		}
+		// Deferring within a loop is not ideal but we expect not too many chunks to exists.
+		defer chunkFile.Close()
 
 		if _, err := io.Copy(file, chunkFile); err != nil {
 			return nil, err
 		}
-		chunkFile.Close()
 	}
 	return file, nil
 }
@@ -235,6 +253,7 @@ func (gf *Fetcher) assembleChunks(destFile, chunksDir string) (*os.File, error) 
 // resuming downloads if interrupted.
 func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 	report ProgressReport, progressCh chan<- ProgressReport) error {
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -258,7 +277,9 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 	// We do substraction between max and min to account for the last chunk
 	// size, which may be of different size if division between res.ContentLength and config.SizeLimit
 	// is not exact.
-	if currSize == (max - min) {
+	//fmt.Printf("Chunk file: %q\n", destFile)
+	// fmt.Printf("\ncurrent size %d == max-min %d\n", currSize, max-min)
+	if currSize >= (max - min) {
 		return nil
 	}
 
@@ -286,6 +307,7 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 	}
 
 	req.Header.Add("Range", brange)
+	//fmt.Printf("range %s\n", brange)
 	res, err := gf.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -296,7 +318,7 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 		return errors.New("HTTP requests returned a non 2xx status code")
 	}
 
-	_, err = io.Copy(&writer, res.Body)
+	_, err = io.Copy(&writer, io.LimitReader(res.Body, max-min))
 	return err
 }
 
