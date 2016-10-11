@@ -261,6 +261,7 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 
 	// In order to resume previous interrupted downloads we need to open the file
 	// in append mode.
+	fmt.Println(destFile)
 	file, err := os.OpenFile(destFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
 	if err != nil {
 		return err
@@ -271,27 +272,24 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 	if err != nil {
 		return err
 	}
-	currSize := fi.Size()
 
-	// There is nothing to do if file exists and was fully downloaded.
-	// We do substraction between max and min to account for the last chunk
-	// size, which may be of different size if division between res.ContentLength and config.SizeLimit
-	// is not exact.
-	//fmt.Printf("Chunk file: %q\n", destFile)
-	// fmt.Printf("\ncurrent size %d == max-min %d\n", currSize, max-min)
-	if currSize >= (max - min) {
+	currFileSize := fi.Size()
+	currChunkSize := (max - min)
+
+	// There is nothing to do if chunk data file was fully downloaded.
+	if currFileSize > 0 && currFileSize == currChunkSize {
 		return nil
 	}
 
 	// Report bytes written already into the file
 	if progressCh != nil {
-		report.WrittenBytes = currSize
+		report.WrittenBytes = currFileSize
 		progressCh <- report
 	}
 
 	// Adjusts min to resume file download from where it was left off.
-	if currSize > 0 {
-		min = min + currSize
+	if currFileSize > 0 {
+		min = min + currFileSize
 	}
 
 	// Prepares writer to report download progress.
@@ -318,7 +316,12 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 		return errors.New("HTTP requests returned a non 2xx status code")
 	}
 
-	_, err = io.Copy(&writer, io.LimitReader(res.Body, max-min))
+	reader := res.Body.(io.Reader)
+	if max > 0 {
+		// Known content-length, so we only read from body the amount of bytes of requested chunk.
+		reader = io.LimitReader(res.Body, currChunkSize)
+	}
+	_, err = io.Copy(&writer, reader)
 	return err
 }
 
