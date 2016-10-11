@@ -261,7 +261,6 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 
 	// In order to resume previous interrupted downloads we need to open the file
 	// in append mode.
-	fmt.Println(destFile)
 	file, err := os.OpenFile(destFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
 	if err != nil {
 		return err
