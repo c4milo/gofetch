@@ -27,9 +27,9 @@ import (
 
 func main() {
 	gf := gofetch.New(
-		gofetch.DestDir(os.TempDir()),
-		gofetch.Concurrency(10),
-		gofetch.ETag(true),
+		gofetch.WithDestDir(os.TempDir()),
+		gofetch.WithConcurrency(10),
+		gofetch.WithETag(true),
 	)
 
 	progressCh := make(chan gofetch.ProgressReport)
