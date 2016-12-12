@@ -5,6 +5,10 @@
 package gofetch
 
 import (
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
 	"hash"
 	"io"
@@ -34,7 +38,7 @@ type Fetcher struct {
 	destDir     string
 	etag        bool
 	concurrency int
-	algorithm   hash.Hash
+	algorithm   string
 	checksum    string
 	httpClient  *http.Client
 }
@@ -76,7 +80,7 @@ func WithTimeout(d time.Duration) Option {
 }
 
 // WithChecksum verifies the file once it is fully downloaded using the provided hash and expected value.
-func WithChecksum(alg hash.Hash, value string) Option {
+func WithChecksum(alg, value string) Option {
 	return func(f *Fetcher) {
 		f.algorithm = alg
 		f.checksum = value
@@ -173,7 +177,7 @@ FETCH:
 		return nil, err
 	}
 
-	if gf.algorithm != nil {
+	if gf.algorithm != "" {
 		if err := gf.verify(f, gf.algorithm, gf.checksum); err != nil {
 			return nil, errors.Wrap(err, "failed veryfing file integrity")
 		}
@@ -185,9 +189,23 @@ FETCH:
 	return f, nil
 }
 
-func (gf *Fetcher) verify(f *os.File, hasher hash.Hash, checksum string) error {
+func (gf *Fetcher) verify(f *os.File, algorithm string, checksum string) error {
+	var hasher hash.Hash
+	switch algorithm {
+	case "md5":
+		hasher = md5.New()
+	case "sha1":
+		hasher = sha1.New()
+	case "sha256":
+		hasher = sha256.New()
+	case "sha512":
+		hasher = sha512.New()
+	default:
+		return fmt.Errorf("unsupported hashing algorithm: %s", algorithm)
+	}
+
 	// Makes sure file cursor is positioned at the beginning
-	_, err := f.Seek(0, 0)
+	_, err := f.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}

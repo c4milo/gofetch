@@ -222,7 +222,7 @@ func TestWithChecksum(t *testing.T) {
 	assert.Ok(t, err)
 	defer os.RemoveAll(destDir)
 
-	gf := New(WithDestDir(destDir), WithChecksum(sha512.New(), "4ff6e159db38d46a665f26e9f82b98134238c0457cc82727a5258b7184773e4967068cc0eecf3928ecd079f3aea6e22aac024847c6d76c0329c4635c4b6ae327"))
+	gf := New(WithDestDir(destDir), WithChecksum("sha512", "4ff6e159db38d46a665f26e9f82b98134238c0457cc82727a5258b7184773e4967068cc0eecf3928ecd079f3aea6e22aac024847c6d76c0329c4635c4b6ae327"))
 	_, err = gf.Fetch(ts.URL+"/test", nil)
 	assert.Ok(t, err)
 }
