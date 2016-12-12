@@ -29,7 +29,7 @@ func main() {
 	gf := gofetch.New(
 		gofetch.WithDestDir(os.TempDir()),
 		gofetch.WithConcurrency(10),
-		gofetch.WithETag(true),
+		gofetch.WithETag(),
 	)
 
 	progressCh := make(chan gofetch.ProgressReport)
@@ -58,6 +58,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	defer func() {
+		if err := destFile.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	if _, err := io.Copy(destFile, myFile); err != nil {
 		panic(err)
