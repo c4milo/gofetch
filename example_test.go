@@ -10,24 +10,28 @@ import (
 func Example() {
 	gf := gofetch.New(
 		gofetch.WithDestDir("/tmp"),
-		gofetch.WithConcurrency(10),
+		gofetch.WithConcurrency(100),
 		gofetch.WithETag(),
+		gofetch.WithChecksum("sha256", "29a8b9009509b39d542ecb229787cdf48f05e739a932289de9e9858d7c487c80"),
 	)
 
 	progressCh := make(chan gofetch.ProgressReport)
+	doneCh := make(chan struct{})
 
 	var myFile *os.File
 	go func() {
+		defer close(doneCh)
+
 		var err error
 		myFile, err = gf.Fetch(
-			"http://releases.ubuntu.com/15.10/ubuntu-15.10-server-amd64.iso",
+			"http://releases.ubuntu.com/16.04.1/ubuntu-16.04.1-server-amd64.iso",
 			progressCh)
 		if err != nil {
 			panic(err)
 		}
 	}()
 
-	// pogressCh is closed by gofetch once a download finishes.
+	// pogressCh is close by gofetch once a download finishes
 	var totalWritten int64
 	for p := range progressCh {
 		// p.WrittenBytes does not accumulate, it represents the chunk size written
@@ -35,7 +39,7 @@ func Example() {
 		totalWritten += p.WrittenBytes
 		fmt.Printf("\r%d of %d bytes", totalWritten, p.Total)
 	}
-	defer myFile.Close()
 
+	<-doneCh
 	fmt.Printf("\nFile saved at %q\n", myFile.Name())
 }
