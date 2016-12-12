@@ -5,11 +5,13 @@
 Go library to download files from the internerds.
 
 ## Features
+
 * Resumes downloads if interrupted.
 * Allows parallel downloading of a single file by requesting multiple data chunks at once over HTTP.
 * Reports download progress through a Go channel if indicated to do so.
+* Supports file integrity verification if a checksum is provided.
 * Supports ETags, skipping downloading a file if it hasn't changed on the server.
-* Can be combined with https://github.com/cenkalti/backoff to support retries with exponential back-off
+* Can be combined with https://github.com/cenkalti/backoff to support retrying with exponential back-off
 
 
 ## Example
