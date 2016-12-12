@@ -11,7 +11,7 @@ func Example() {
 	gf := gofetch.New(
 		gofetch.WithDestDir("/tmp"),
 		gofetch.WithConcurrency(10),
-		gofetch.WithETag(true),
+		gofetch.WithETag(),
 	)
 
 	progressCh := make(chan gofetch.ProgressReport)
@@ -35,5 +35,7 @@ func Example() {
 		totalWritten += p.WrittenBytes
 		fmt.Printf("\r%d of %d bytes", totalWritten, p.Total)
 	}
+	defer myFile.Close()
+
 	fmt.Printf("\nFile saved at %q\n", myFile.Name())
 }
