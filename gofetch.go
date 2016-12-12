@@ -205,7 +205,7 @@ func (gf *Fetcher) verify(f *os.File, algorithm string, checksum string) error {
 	}
 
 	// Makes sure file cursor is positioned at the beginning
-	_, err := f.Seek(0, io.SeekStart)
+	_, err := f.Seek(0, 0)
 	if err != nil {
 		return err
 	}
