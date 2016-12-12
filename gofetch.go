@@ -177,6 +177,9 @@ FETCH:
 		if err := gf.verify(f, gf.algorithm, gf.checksum); err != nil {
 			return nil, errors.Wrap(err, "failed veryfing file integrity")
 		}
+
+		// We need to make sure we return the file descriptor ready to be read by the user again
+		f.Seek(0, io.SeekStart)
 	}
 
 	return f, nil
