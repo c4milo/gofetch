@@ -183,7 +183,7 @@ FETCH:
 		}
 
 		// We need to make sure we return the file descriptor ready to be read by the user again
-		f.Seek(0, io.SeekStart)
+		f.Seek(0, 0)
 	}
 
 	return f, nil
