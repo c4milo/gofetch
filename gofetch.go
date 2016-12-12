@@ -5,8 +5,8 @@
 package gofetch
 
 import (
-	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"os"
@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mitchellh/go-homedir"
+	"github.com/pkg/errors"
 )
 
 // ProgressReport represents the current download progress of a given file
@@ -33,6 +34,8 @@ type Fetcher struct {
 	destDir     string
 	etag        bool
 	concurrency int
+	algorithm   hash.Hash
+	checksum    string
 	httpClient  *http.Client
 }
 
@@ -55,15 +58,12 @@ func WithConcurrency(c int) Option {
 	}
 }
 
-// WithETag allows you to disable or enable ETag support, meaning that if an already
-// downloaded file is currently on disk and matches the ETag value returned by the server,
-// it will not be downloaded again. By default it is set to true.
-// Be aware that different servers, serving the same file, are likely to return
-// different ETag values, causing the file to be re-downloaded, even though it
-// might already exist on disk.
-func WithETag(enable bool) Option {
+// WithETag enables ETag support, meaning that if an already downloaded file is currently on disk and matches the ETag value returned by the server,
+// it will not be downloaded again. By default it is set to false. Be aware that different servers, serving the same file,
+// are likely to return different ETag values, causing the file to be re-downloaded, even though it might already exist on disk.
+func WithETag() Option {
 	return func(f *Fetcher) {
-		f.etag = enable
+		f.etag = true
 	}
 }
 
@@ -72,6 +72,14 @@ func WithETag(enable bool) Option {
 func WithTimeout(d time.Duration) Option {
 	return func(f *Fetcher) {
 		f.httpClient.Timeout = d
+	}
+}
+
+// WithChecksum verifies the file once it is fully downloaded using the provided hash and expected value.
+func WithChecksum(alg hash.Hash, value string) Option {
+	return func(f *Fetcher) {
+		f.algorithm = alg
+		f.checksum = value
 	}
 }
 
@@ -91,7 +99,6 @@ func New(opts ...Option) *Fetcher {
 	gofetch := &Fetcher{
 		concurrency: 1,
 		destDir:     "./",
-		etag:        true,
 		httpClient:  &http.Client{Timeout: 0},
 	}
 
@@ -161,7 +168,39 @@ func (gf *Fetcher) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 	}
 
 FETCH:
-	return gf.parallelFetch(url, destFilePath, res.ContentLength, progressCh)
+	f, err := gf.parallelFetch(url, destFilePath, res.ContentLength, progressCh)
+	if err != nil {
+		return nil, err
+	}
+
+	if gf.algorithm != nil {
+		if err := gf.verify(f, gf.algorithm, gf.checksum); err != nil {
+			return nil, errors.Wrap(err, "failed veryfing file integrity")
+		}
+	}
+
+	return f, nil
+}
+
+func (gf *Fetcher) verify(f *os.File, hasher hash.Hash, checksum string) error {
+	// Makes sure file cursor is positioned at the beginning
+	_, err := f.Seek(0, 0)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(hasher, f)
+	if err != nil {
+		return err
+	}
+
+	result := fmt.Sprintf("%x", hasher.Sum(nil))
+
+	if result != checksum {
+		return fmt.Errorf("checksum does not match\n found: %s\n expected: %s", result, checksum)
+	}
+
+	return nil
 }
 
 // parallelFetch fetches using multiple goroutines, each piece is streamed down

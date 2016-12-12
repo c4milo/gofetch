@@ -178,7 +178,7 @@ func TestEtagSupport(t *testing.T) {
 	assert.Ok(t, err)
 	defer os.RemoveAll(destDir)
 
-	gf := New(WithDestDir(destDir), WithConcurrency(1))
+	gf := New(WithDestDir(destDir), WithConcurrency(1), WithETag())
 
 	// Fetches file for the first tim
 	_, err = gf.Fetch(ts.URL+"/test", nil)
@@ -204,5 +204,25 @@ func TestEtagSupport(t *testing.T) {
 	dir, err := homedir.Dir()
 	assert.Ok(t, err)
 	err = os.RemoveAll(filepath.Join(dir, ".gofetch"))
+	assert.Ok(t, err)
+}
+
+func TestWithChecksum(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		file, err := os.Open("./fixtures/test")
+		assert.Ok(t, err)
+		assert.Cond(t, file != nil, "Failed loading fixture file")
+		defer file.Close()
+
+		http.ServeContent(w, r, file.Name(), time.Time{}, file)
+	}))
+	defer ts.Close()
+
+	destDir, err := ioutil.TempDir(os.TempDir(), "checksum-test")
+	assert.Ok(t, err)
+	defer os.RemoveAll(destDir)
+
+	gf := New(WithDestDir(destDir), WithChecksum(sha512.New(), "4ff6e159db38d46a665f26e9f82b98134238c0457cc82727a5258b7184773e4967068cc0eecf3928ecd079f3aea6e22aac024847c6d76c0329c4635c4b6ae327"))
+	_, err = gf.Fetch(ts.URL+"/test", nil)
 	assert.Ok(t, err)
 }
