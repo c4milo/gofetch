@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/hooklift/httpclient"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 )
@@ -71,11 +71,10 @@ func WithETag() Option {
 	}
 }
 
-// WithTimeout allows to set a global timeout for the HTTP client. Defaults to 30 seconds. It is effectively a
-// deadline as that's how Go's stdlib interprets it. It does not reset upon activity in the connection.
-func WithTimeout(d time.Duration) Option {
+// WithHTTPClient allows to provide a custom HTTP client. By default a HTTP client with support for read/write timeouts is used.
+func WithHTTPClient(c *http.Client) Option {
 	return func(f *Fetcher) {
-		f.httpClient.Timeout = d
+		f.httpClient = c
 	}
 }
 
@@ -103,12 +102,13 @@ func New(opts ...Option) *Fetcher {
 	gofetch := &Fetcher{
 		concurrency: 1,
 		destDir:     "./",
-		httpClient:  &http.Client{Timeout: 0},
+		httpClient:  httpclient.Default(),
 	}
 
 	for _, opt := range opts {
 		opt(gofetch)
 	}
+
 	return gofetch
 }
 
@@ -258,8 +258,8 @@ func (gf *Fetcher) parallelFetch(url, destFilePath string, length int64, progres
 			defer wg.Done()
 			chunkFile := filepath.Join(chunksDir, strconv.Itoa(chunkNumber))
 
-			err := gf.fetch(url, chunkFile, min, max, report, progressCh)
-			if err != nil {
+			if err := gf.fetch(url, chunkFile, min, max, report, progressCh); err != nil {
+				fmt.Printf("gofetch: error %#v\n", err)
 				errs = append(errs, err)
 			}
 		}(min, max, int(i))
@@ -335,15 +335,15 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 	currFileSize := fi.Size()
 	currChunkSize := (max - min)
 
-	// There is nothing to do if chunk data file was fully downloaded.
-	if currFileSize > 0 && currFileSize == currChunkSize {
-		return nil
-	}
-
 	// Report bytes written already into the file
 	if progressCh != nil {
 		report.WrittenBytes = currFileSize
 		progressCh <- report
+	}
+
+	// There is nothing to do if chunk data file was fully downloaded.
+	if currFileSize > 0 && currFileSize == currChunkSize {
+		return nil
 	}
 
 	// Adjusts min to resume file download from where it was left off.
