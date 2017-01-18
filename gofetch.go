@@ -127,7 +127,7 @@ func (gf *Fetcher) Fetch(url string, progressCh chan<- ProgressReport) (*os.File
 	}
 
 	if !strings.HasPrefix(res.Status, "2") {
-		return nil, errors.New("HTTP requests returned a non 2xx status code")
+		return nil, fmt.Errorf("HTTP requests returned a non 2xx status code: %s", res.Status)
 	}
 
 	if res.Header.Get("Accept-Ranges") != "bytes" {
@@ -372,7 +372,7 @@ func (gf *Fetcher) fetch(url, destFile string, min, max int64,
 	defer res.Body.Close()
 
 	if !strings.HasPrefix(res.Status, "2") {
-		return errors.New("HTTP requests returned a non 2xx status code")
+		return fmt.Errorf("HTTP requests returned a non 2xx status code: %s", res.Status)
 	}
 
 	reader := res.Body.(io.Reader)
